@@ -15,16 +15,16 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          ref: 978599ac693263451a63bc029f0eca6a7f6ebddf
-          fetch-depth: 3
+          ref: 133aaa64a97d2f8bfae3ed3d55c416c90e159b79
+          fetch-depth: 4
           persist-credentials: false
       - name: Verify tested commit and baseline
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = 978599ac693263451a63bc029f0eca6a7f6ebddf
-          test "$(git rev-parse HEAD^)" = 818d1179e445e3271f7d93ff1c2a2c21b62722a7
-          test "$(git rev-parse HEAD^^)" = 6fff37f0e0e2425b764a0c9902d90c7159103ab7
+          test "$(git rev-parse HEAD)" = 133aaa64a97d2f8bfae3ed3d55c416c90e159b79
+          test "$(git rev-parse HEAD^)" = 978599ac693263451a63bc029f0eca6a7f6ebddf
+          test "$(git rev-parse HEAD^^^)" = 6fff37f0e0e2425b764a0c9902d90c7159103ab7
           sw_vers
           xcodebuild -version
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
