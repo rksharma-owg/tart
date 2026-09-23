@@ -1,0 +1,104 @@
+name: Tart 1302 fork preflight
+
+on:
+  push:
+    branches:
+      - codex/tart-1302-preflight
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: macos-15
+    steps:
+      - name: Verify affected release fails on macOS 15
+        shell: bash
+        run: |
+          set -euo pipefail
+          sw_vers
+          curl -fL https://github.com/openai/tart/releases/download/2.37.0/tart.tar.gz -o tart.tar.gz
+          tar -xzf tart.tar.gz
+          set +e
+          output=$(tart.app/Contents/MacOS/tart --version 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          test "$status" -ne 0
+          grep -q libswiftCompatibilitySpan.dylib <<< "$output"
+
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: 9f7a99db23e46745e1fd3184449c4fcd3c2dc2b3
+          persist-credentials: false
+      - name: Verify exact patch and runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 9f7a99db23e46745e1fd3184449c4fcd3c2dc2b3
+          sw_vers
+          xcodebuild -version
+          sh -n .ci/sign-release.sh .ci/test-release-archive.sh
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: integration-tests/go.mod
+          cache-dependency-path: integration-tests/go.sum
+      - name: Run upstream build and unit tests
+        run: |
+          swift build --build-system swiftbuild
+          export PATH="$PATH:/usr/sbin"
+          swift test --build-system swiftbuild
+      - name: Run upstream integration tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin_path="$(swift build --build-system swiftbuild --show-bin-path)"
+          codesign --sign - --entitlements Resources/tart-dev.entitlements --force "$bin_path/tart"
+          cd integration-tests
+          PATH="$bin_path:$PATH" go test -v ./...
+      - name: Build and sign snapshot using patch
+        shell: bash
+        env:
+          TART_RELEASE_SNAPSHOT: "true"
+        run: |
+          set -euo pipefail
+          sh .ci/build-release.sh arm64
+          sh .ci/build-release.sh x86_64
+          app=dist/tart_darwin_all/tart.app
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          lipo -create .build/prebuilt/arm64/tart .build/prebuilt/x86_64/tart -output "$app/Contents/MacOS/tart"
+          cp Resources/embedded.provisionprofile Resources/Info.plist "$app/Contents/"
+          cp "Resources/actool/UPW Tart.icns" Resources/actool/Assets.car "$app/Contents/Resources/"
+          sh .ci/sign-release.sh
+          tar -czf dist/tart.tar.gz -C dist/tart_darwin_all tart.app
+          sh .ci/test-release-archive.sh dist/tart.tar.gz
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tart-1302-snapshot
+          path: dist/tart.tar.gz
+
+  macos15:
+    needs: [baseline, build]
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: 9f7a99db23e46745e1fd3184449c4fcd3c2dc2b3
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: tart-1302-snapshot
+      - name: Verify snapshot starts on macOS 15
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 9f7a99db23e46745e1fd3184449c4fcd3c2dc2b3
+          sw_vers
+          sh .ci/test-release-archive.sh tart.tar.gz
+          tar -xzf tart.tar.gz
+          tart.app/Contents/MacOS/tart --version
+          tart.app/Contents/MacOS/tart --generate-completion-script bash >/dev/null
