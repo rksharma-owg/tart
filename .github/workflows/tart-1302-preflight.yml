@@ -33,22 +33,22 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          ref: 9ffc5d9c1598c42fc425da57ed60a4dadf56fadb
+          ref: ce9e16a2a7b1af574e60fd55e6865e723484eed3
           persist-credentials: false
       - name: Verify exact patch and runner
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = 9ffc5d9c1598c42fc425da57ed60a4dadf56fadb
+          test "$(git rev-parse HEAD)" = ce9e16a2a7b1af574e60fd55e6865e723484eed3
           sw_vers
           xcodebuild -version
           swiftc_path="$(xcrun --find swiftc)"
-          proposed_path="$(dirname "$swiftc_path")/../lib/swift/macosx/libswiftCompatibilitySpan.dylib"
+          proposed_path="$(dirname "$swiftc_path")/../lib/swift-6.2/macosx/libswiftCompatibilitySpan.dylib"
           echo "swiftc: $swiftc_path"
           echo "proposed path: $proposed_path"
-          if [ -f "$proposed_path" ]; then echo "proposed path exists"; else echo "proposed path missing"; fi
+          test -f "$proposed_path"
           find "$(dirname "$(dirname "$swiftc_path")")/lib" -name libswiftCompatibilitySpan.dylib -print
-          sh -n .ci/sign-release.sh .ci/test-release-archive.sh
+          sh -n .ci/build-release.sh .ci/sign-release.sh
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: integration-tests/go.mod
@@ -77,11 +77,19 @@ jobs:
           app=dist/tart_darwin_all/tart.app
           mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
           lipo -create .build/prebuilt/arm64/tart .build/prebuilt/x86_64/tart -output "$app/Contents/MacOS/tart"
+          for arch in arm64 x86_64; do
+            otool -arch "$arch" -l "$app/Contents/MacOS/tart" | awk '
+              /^Load command/ { weak = 0 }
+              /cmd LC_LOAD_WEAK_DYLIB/ { weak = 1 }
+              weak && /name @rpath\/libswiftCompatibilitySpan\.dylib/ { found = 1 }
+              END { exit found ? 0 : 1 }
+            '
+          done
           cp Resources/embedded.provisionprofile Resources/Info.plist "$app/Contents/"
           cp "Resources/actool/UPW Tart.icns" Resources/actool/Assets.car "$app/Contents/Resources/"
           sh .ci/sign-release.sh
           tar -czf dist/tart.tar.gz -C dist/tart_darwin_all tart.app
-          sh .ci/test-release-archive.sh dist/tart.tar.gz
+          codesign --verify --strict --deep "$app"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: tart-1302-snapshot
@@ -93,7 +101,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          ref: 9ffc5d9c1598c42fc425da57ed60a4dadf56fadb
+          ref: ce9e16a2a7b1af574e60fd55e6865e723484eed3
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
@@ -102,9 +110,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = 9ffc5d9c1598c42fc425da57ed60a4dadf56fadb
+          test "$(git rev-parse HEAD)" = ce9e16a2a7b1af574e60fd55e6865e723484eed3
           sw_vers
-          sh .ci/test-release-archive.sh tart.tar.gz
           tar -xzf tart.tar.gz
+          codesign --verify --strict --deep tart.app
           tart.app/Contents/MacOS/tart --version
           tart.app/Contents/MacOS/tart --generate-completion-script bash >/dev/null
