@@ -38,7 +38,8 @@ class VMStorageHelper {
 
 extension NSError {
   func isFileNotFound() -> Bool {
-    return self.code == NSFileNoSuchFileError || self.code == NSFileReadNoSuchFileError
+    return self.domain == NSCocoaErrorDomain &&
+      (self.code == NSFileNoSuchFileError || self.code == NSFileReadNoSuchFileError)
   }
 }
 
