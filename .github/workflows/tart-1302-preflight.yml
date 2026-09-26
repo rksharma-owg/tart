@@ -33,15 +33,21 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          ref: 9f7a99db23e46745e1fd3184449c4fcd3c2dc2b3
+          ref: 9ffc5d9c1598c42fc425da57ed60a4dadf56fadb
           persist-credentials: false
       - name: Verify exact patch and runner
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = 9f7a99db23e46745e1fd3184449c4fcd3c2dc2b3
+          test "$(git rev-parse HEAD)" = 9ffc5d9c1598c42fc425da57ed60a4dadf56fadb
           sw_vers
           xcodebuild -version
+          swiftc_path="$(xcrun --find swiftc)"
+          proposed_path="$(dirname "$swiftc_path")/../lib/swift/macosx/libswiftCompatibilitySpan.dylib"
+          echo "swiftc: $swiftc_path"
+          echo "proposed path: $proposed_path"
+          if [ -f "$proposed_path" ]; then echo "proposed path exists"; else echo "proposed path missing"; fi
+          find "$(dirname "$(dirname "$swiftc_path")")/lib" -name libswiftCompatibilitySpan.dylib -print
           sh -n .ci/sign-release.sh .ci/test-release-archive.sh
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
@@ -87,7 +93,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          ref: 9f7a99db23e46745e1fd3184449c4fcd3c2dc2b3
+          ref: 9ffc5d9c1598c42fc425da57ed60a4dadf56fadb
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
@@ -96,7 +102,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = 9f7a99db23e46745e1fd3184449c4fcd3c2dc2b3
+          test "$(git rev-parse HEAD)" = 9ffc5d9c1598c42fc425da57ed60a4dadf56fadb
           sw_vers
           sh .ci/test-release-archive.sh tart.tar.gz
           tar -xzf tart.tar.gz
