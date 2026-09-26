@@ -1,0 +1,94 @@
+name: Tart review preflight
+on:
+  push:
+    branches: [codex/tart-review-preflight-0926]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: xcode-27
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: clone
+            commit: 54f8b4af82ca9c43c51be6a78cd92c34fc27a87f
+          - label: control
+            commit: 837c888b42d786d5433547167b85b761a1596b48
+          - label: control-merge
+            commit: e598b122f492d72af55dbc7e42b2a542d022a3cc
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ matrix.commit }}
+          persist-credentials: false
+      - name: Verify tested SHA and environment
+        env:
+          TESTED_SHA: ${{ matrix.commit }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$TESTED_SHA"
+          git show -s --format='%H %P'
+          xcodebuild -version
+          swift --version
+          sw_vers
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: integration-tests/go.mod
+          cache-dependency-path: integration-tests/go.sum
+      - name: Build and unit tests
+        run: |
+          swift build --build-system swiftbuild
+          export PATH="$PATH:/usr/sbin"
+          swift test --build-system swiftbuild
+      - name: Go integration tests
+        run: |
+          bin_path="$(swift build --build-system swiftbuild --show-bin-path)"
+          codesign --sign - --entitlements Resources/tart-dev.entitlements --force "$bin_path/tart"
+          cd integration-tests
+          PATH="$bin_path:$PATH" go test -v ./...
+      - name: Swift format and diff integrity
+        run: |
+          swift package plugin --allow-writing-to-package-directory swiftformat --cache ignore --lint .
+          git diff --exit-code
+          git diff --check
+      - name: Confirm clone regression fails without correction
+        if: matrix.label == 'clone'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('Sources/tart/Commands/Clone.swift')
+          s = p.read_text().replace('FileManager.default.fileExists(atPath: destinationURL.path)', 'localStorage.exists(newName)')
+          p.write_text(s)
+          PY
+          set +e
+          swift test --build-system swiftbuild --filter testClonePreservesIncompleteDestination > regression.log 2>&1
+          status=$?
+          set -e
+          cat regression.log
+          test "$status" -ne 0
+          grep -q 'expected an incomplete destination to be preserved' regression.log
+          git restore Sources/tart/Commands/Clone.swift
+      - name: Confirm recovery and backpressure regressions fail
+        if: matrix.label == 'control'
+        run: |
+          for replacement in 'context.fireErrorCaught(error)' 'context.read()'; do
+            REPLACEMENT="$replacement" python3 - <<'PY'
+          import os
+          from pathlib import Path
+          p = Path('Sources/tart/ControlSocket.swift')
+          s = p.read_text()
+          assert s.count('context.channel.read()') == 1
+          p.write_text(s.replace('context.channel.read()', os.environ['REPLACEMENT']))
+          PY
+            set +e
+            swift test --build-system swiftbuild --filter testAcceptErrorsRetryReadingAndForwardOtherErrors > regression.log 2>&1
+            status=$?
+            set -e
+            cat regression.log
+            test "$status" -ne 0
+            grep -q 'XCTAssertEqual failed' regression.log
+            git restore Sources/tart/ControlSocket.swift
+          done
+      - name: Build x86_64
+        run: swift build --build-system swiftbuild --arch x86_64 --product tart
