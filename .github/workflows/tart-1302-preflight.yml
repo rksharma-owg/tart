@@ -33,13 +33,13 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          ref: ce9e16a2a7b1af574e60fd55e6865e723484eed3
+          ref: 83a648f0a327bd6a8cdf415de74b8b43be81798e
           persist-credentials: false
       - name: Verify exact patch and runner
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = ce9e16a2a7b1af574e60fd55e6865e723484eed3
+          test "$(git rev-parse HEAD)" = 83a648f0a327bd6a8cdf415de74b8b43be81798e
           sw_vers
           xcodebuild -version
           swiftc_path="$(xcrun --find swiftc)"
@@ -105,7 +105,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          ref: ce9e16a2a7b1af574e60fd55e6865e723484eed3
+          ref: 83a648f0a327bd6a8cdf415de74b8b43be81798e
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
@@ -114,7 +114,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = ce9e16a2a7b1af574e60fd55e6865e723484eed3
+          test "$(git rev-parse HEAD)" = 83a648f0a327bd6a8cdf415de74b8b43be81798e
           sw_vers
           tar -xzf tart.tar.gz
           codesign --verify --strict --deep tart.app
