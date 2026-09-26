@@ -78,11 +78,15 @@ jobs:
           mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
           lipo -create .build/prebuilt/arm64/tart .build/prebuilt/x86_64/tart -output "$app/Contents/MacOS/tart"
           for arch in arm64 x86_64; do
+            echo "Swift compatibility load commands for $arch:"
             otool -arch "$arch" -l "$app/Contents/MacOS/tart" | awk '
-              /^Load command/ { weak = 0 }
-              /cmd LC_LOAD_WEAK_DYLIB/ { weak = 1 }
-              weak && /name @rpath\/libswiftCompatibilitySpan\.dylib/ { found = 1 }
-              END { exit found ? 0 : 1 }
+              /cmd LC_LOAD_WEAK_DYLIB/ { weak = 1; next }
+              /cmd LC_LOAD_DYLIB/ { weak = 0; next }
+              /name .*libswiftCompatibilitySpan\.dylib/ {
+                print $0, weak ? "(weak)" : "(strong)"
+                if (weak) found = 1; else strong = 1
+              }
+              END { exit found && !strong ? 0 : 1 }
             '
           done
           cp Resources/embedded.provisionprofile Resources/Info.plist "$app/Contents/"
