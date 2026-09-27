@@ -1,0 +1,64 @@
+name: Tart list deletion race preflight
+on:
+  push:
+    branches: [codex/tart-list-preflight-0927]
+permissions:
+  contents: read
+env:
+  TESTED_SHA: b7d7b767a3f25cc4678d645b61dd3aa2a07b212e
+  BASELINE_SHA: 27d3e2c5da034fe86e44225efe783ef5750a2f11
+jobs:
+  verify:
+    runs-on: xcode-27
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ env.TESTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify tested SHA and environment
+        run: |
+          test "$(git rev-parse HEAD)" = "$TESTED_SHA"
+          test "$(git rev-parse HEAD^)" = "$BASELINE_SHA"
+          git show -s --format='%H %P'
+          xcodebuild -version
+          swift --version
+          sw_vers
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: integration-tests/go.mod
+          cache-dependency-path: integration-tests/go.sum
+      - name: Build
+        run: swift build --build-system swiftbuild
+      - name: Prove regression on baseline production code
+        run: |
+          git show "$BASELINE_SHA:Sources/tart/Commands/List.swift" > Sources/tart/Commands/List.swift
+          export PATH="$PATH:/usr/sbin"
+          set +e
+          swift test --build-system swiftbuild --filter 'CommandBehaviorTests/testList' > /tmp/tart-list-red.log 2>&1
+          rc=$?
+          set -e
+          cat /tmp/tart-list-red.log
+          test "$rc" -ne 0
+          test "$(grep -c 'error:.*list should survive deletion' /tmp/tart-list-red.log)" -eq 9
+          grep -q 'testListPreservesMetadataPermissionErrors.*passed' /tmp/tart-list-red.log
+          grep -q 'testListSurvivesUnavailableDiskCapacity.*passed' /tmp/tart-list-red.log
+          git restore Sources/tart/Commands/List.swift
+      - name: Full Swift unit tests
+        run: |
+          export PATH="$PATH:/usr/sbin"
+          swift test --build-system swiftbuild
+      - name: Go integration tests
+        run: |
+          bin_path="$(swift build --build-system swiftbuild --show-bin-path)"
+          codesign --sign - --entitlements Resources/tart-dev.entitlements --force "$bin_path/tart"
+          cd integration-tests
+          PATH="$bin_path:$PATH" go test -v ./...
+      - name: Swift format and diff integrity
+        run: |
+          swift package plugin --allow-writing-to-package-directory swiftformat --cache ignore --lint .
+          git diff --exit-code
+          git diff --check
+      - name: Build x86_64
+        run: swift build --build-system swiftbuild --arch x86_64 --product tart
