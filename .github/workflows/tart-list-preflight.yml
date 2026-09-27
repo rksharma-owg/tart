@@ -5,7 +5,7 @@ on:
 permissions:
   contents: read
 env:
-  TESTED_SHA: b7d7b767a3f25cc4678d645b61dd3aa2a07b212e
+  TESTED_SHA: 801794ef059cf975eab890e36ccdf8c8f391c823
   BASELINE_SHA: 27d3e2c5da034fe86e44225efe783ef5750a2f11
 jobs:
   verify:
@@ -20,7 +20,7 @@ jobs:
       - name: Verify tested SHA and environment
         run: |
           test "$(git rev-parse HEAD)" = "$TESTED_SHA"
-          test "$(git rev-parse HEAD^)" = "$BASELINE_SHA"
+          test "$(git merge-base HEAD "$BASELINE_SHA")" = "$BASELINE_SHA"
           git show -s --format='%H %P'
           xcodebuild -version
           swift --version
@@ -41,7 +41,11 @@ jobs:
           set -e
           cat /tmp/tart-list-red.log
           test "$rc" -ne 0
-          test "$(grep -c 'error:.*list should survive deletion' /tmp/tart-list-red.log)" -eq 9
+          for name in testListSkipsLocalVMsDeletedDuringMetadataLookup testListSkipsOCIVMsDeletedDuringMetadataLookup testListSkipsVMsDeletedDuringMetadataLookupAcrossSources; do
+            grep -q "Test Case.*$name.*failed" /tmp/tart-list-red.log
+          done
+          grep -q 'config.json.*no such file' /tmp/tart-list-red.log
+          grep -q 'Executed 5 tests, with 3 failures' /tmp/tart-list-red.log
           grep -q 'testListPreservesMetadataPermissionErrors.*passed' /tmp/tart-list-red.log
           grep -q 'testListSurvivesUnavailableDiskCapacity.*passed' /tmp/tart-list-red.log
           git restore Sources/tart/Commands/List.swift
